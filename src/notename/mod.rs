@@ -1,6 +1,6 @@
 use crate::interval::{stack::Stack, stacktype::r#trait::FiveLimitStackType};
 
-mod johnston;
+pub mod johnston;
 
 #[derive(Clone, Copy)]
 pub enum NoteNameStyle {
@@ -16,6 +16,17 @@ impl<T: FiveLimitStackType> Stack<T> {
             }
             NoteNameStyle::JohnstonFiveLimitClass => {
                 johnston::fivelimit::NoteName::new(&self).str_class()
+            }
+        }
+    }
+
+    pub fn actual_notename(&self, style: &NoteNameStyle) -> String {
+        match style {
+            NoteNameStyle::JohnstonFiveLimitFull => {
+                johnston::fivelimit::NoteName::new_from_actual(&self).str_full()
+            }
+            NoteNameStyle::JohnstonFiveLimitClass => {
+                johnston::fivelimit::NoteName::new_from_actual(&self).str_class()
             }
         }
     }

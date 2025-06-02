@@ -24,16 +24,18 @@
             overlays = [(import rust-overlay)];
           }
         ));
-    rust-bin = forAllSystems (_: pkgs: pkgs.rust-bin.nightly.latest);
+    rust-bin = forAllSystems (_: pkgs: pkgs.rust-bin.stable.latest);
     rustPlatform = forAllSystems (system: pkgs:
       pkgs.makeRustPlatform (with rust-bin.${system}; {
         cargo = minimal;
         rustc = minimal;
       }));
-    adaptuner = forAllSystems (system: pkgs:
+    adaptuner = forAllSystems (system: pkgs: let
+      cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+    in
       rustPlatform.${system}.buildRustPackage {
-        pname = "adaptuner";
-        version = "0.1.0";
+        pname = cargoToml.package.name;
+        version = cargoToml.package.version;
         src = ./.;
         cargoLock.lockFile = ./Cargo.lock;
         nativeBuildInputs = with pkgs; [pkg-config];
@@ -66,6 +68,13 @@
             # latexrun
           ]
           ++ nixpkgs.lib.optionals pkgs.stdenv.isLinux [alsa-utils];
+
+        LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath (with pkgs;
+          nixpkgs.lib.optionals stdenv.isLinux [
+            wayland
+            libGL
+            libxkbcommon
+          ])}";
       };
     });
   };

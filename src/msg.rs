@@ -1,62 +1,126 @@
-use std::time::Duration;
-
-use midi_msg::{Channel, MidiMsg};
-
-use crate::interval::{
-    interval::Semitones, stack::Stack, stacktype::r#trait::StackCoeff,
-    stacktype::r#trait::StackType,
+use std::{
+    sync::mpsc,
+    time::{Duration, Instant},
 };
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum AfterProcess<T: StackType> {
-    Start,
-    Stop,
-    Reset,
+use midi_msg::Channel;
+use midir::{MidiInputPort, MidiOutputPort};
 
+use crate::{
+    interval::{
+        base::Semitones,
+        stack::Stack,
+        stacktype::r#trait::{StackCoeff, StackType},
+    },
+    reference::Reference,
+};
+
+pub trait HandleMsg<I, O> {
+    fn handle_msg(&mut self, msg: I, forward: &mpsc::Sender<O>);
+}
+
+pub trait HandleMsgRef<I, O> {
+    fn handle_msg_ref(&mut self, msg: &I, forward: &mpsc::Sender<O>);
+}
+
+pub trait HasStart {
+    fn is_start(&self) -> bool;
+    fn mk_start() -> Self;
+}
+
+/// Convention: the handler wil handle a 'stop' message, and immediately after that the thread will exit.
+pub trait HasStop {
+    fn is_stop(&self) -> bool;
+    fn mk_stop() -> Self;
+}
+
+pub trait MessageTranslate<B> {
+    fn translate(self) -> Option<B>;
+}
+
+pub trait MessageTranslate2<B, C> {
+    fn translate2(self) -> (Option<B>, Option<C>);
+}
+
+pub trait MessageTranslate3<B, C, D> {
+    fn translate3(self) -> (Option<B>, Option<C>, Option<D>);
+}
+
+pub trait MessageTranslate4<B, C, D, E> {
+    fn translate4(self) -> (Option<B>, Option<C>, Option<D>, Option<E>);
+}
+
+pub enum ToProcess<T: StackType> {
+    Stop,
+    Reset { time: Instant },
+    IncomingMidi { time: Instant, bytes: Vec<u8> },
+    ToStrategy(ToStrategy<T>),
+}
+
+pub enum FromProcess<T: StackType> {
     Notify {
         line: String,
     },
-
     MidiParseErr(String),
-
-    DetunedNote {
-        note: u8,
-        should_be: Semitones,
-        actual: Semitones,
-        explanation: &'static str,
+    OutgoingMidi {
+        bytes: Vec<u8>,
+        time: Instant,
     },
-
-    CrosstermEvent(crossterm::event::Event),
-
+    FromStrategy(FromStrategy<T>),
     TunedNoteOn {
         channel: Channel,
         note: u8,
         velocity: u8,
         tuning: Semitones,
         tuning_stack: Stack<T>,
+        time: Instant,
     },
-    NoteOff {
-        held_by_sustain: bool,
+    NoteOn {
         channel: Channel,
         note: u8,
         velocity: u8,
+        time: Instant,
     },
-    Sustain {
+    NoteOff {
+        channel: Channel,
+        note: u8,
+        velocity: u8,
+        time: Instant,
+        held_by_pedal: bool,
+    },
+    PedalHold {
         channel: Channel,
         value: u8,
+        time: Instant,
     },
     ProgramChange {
         channel: Channel,
         program: u8,
+        time: Instant,
     },
-    ForwardMidi {
-        msg: MidiMsg,
-    },
+}
 
+pub enum ToStrategy<T: StackType> {
+    Consider {
+        coefficients: Vec<StackCoeff>,
+        time: Instant,
+    },
+    ToggleTemperament {
+        index: usize,
+        time: Instant,
+    },
+    SetReference {
+        reference: Reference<T>,
+        time: Instant,
+    },
+}
+
+pub enum FromStrategy<T: StackType> {
     Retune {
         note: u8,
         tuning: Semitones,
         tuning_stack: Stack<T>,
+        time: Instant,
     },
     SetReference {
         key: u8,
@@ -70,23 +134,542 @@ pub enum AfterProcess<T: StackType> {
         reference_stack: Stack<T>,
     },
     NotifyNoFit,
+}
 
-    Special {
-        code: u8,
+pub enum ToBackend {
+    Start {
+        time: Instant,
     },
-
-    BackendLatency {
-        since_input: Duration,
+    Reset {
+        time: Instant,
+    },
+    Stop,
+    TunedNoteOn {
+        channel: Channel,
+        note: u8,
+        velocity: u8,
+        tuning: Semitones,
+        time: Instant,
+    },
+    NoteOn {
+        channel: Channel,
+        note: u8,
+        velocity: u8,
+        time: Instant,
+    },
+    Retune {
+        note: u8,
+        tuning: Semitones,
+        time: Instant,
+    },
+    NoteOff {
+        channel: Channel,
+        note: u8,
+        velocity: u8,
+        time: Instant,
+    },
+    PedalHold {
+        channel: Channel,
+        value: u8,
+        time: Instant,
+    },
+    ProgramChange {
+        channel: Channel,
+        program: u8,
+        time: Instant,
     },
 }
 
-#[derive(Debug)]
-pub enum ToProcess {
+pub enum FromBackend {
+    OutgoingMidi {
+        time: Instant,
+        bytes: Vec<u8>,
+    },
+    DetunedNote {
+        note: u8,
+        should_be: Semitones,
+        actual: Semitones,
+        explanation: &'static str,
+    },
+}
+
+pub enum ToUi<T: StackType> {
+    Stop,
+    Notify {
+        line: String,
+    },
+    TunedNoteOn {
+        channel: Channel,
+        note: u8,
+        tuning_stack: Stack<T>,
+        time: Instant,
+    },
+    NoteOn {
+        channel: Channel,
+        note: u8,
+        time: Instant,
+    },
+    Retune {
+        note: u8,
+        tuning_stack: Stack<T>,
+    },
+    NoteOff {
+        channel: Channel,
+        note: u8,
+        time: Instant,
+    },
+    EventLatency {
+        since_input: Duration,
+    },
+    InputConnectionError {
+        reason: String,
+    },
+    InputConnected {
+        portname: String,
+    },
+    InputDisconnected {
+        available_ports: Vec<(MidiInputPort, String)>,
+    },
+    OutputConnectionError {
+        reason: String,
+    },
+    OutputConnected {
+        portname: String,
+    },
+    OutputDisconnected {
+        available_ports: Vec<(MidiOutputPort, String)>,
+    },
+    NotifyFit {
+        pattern_name: String,
+        reference_stack: Stack<T>,
+    },
+    NotifyNoFit,
+    SetReference {
+        key: u8,
+        stack: Stack<T>,
+    },
+    Consider {
+        stack: Stack<T>,
+    },
+    DetunedNote {
+        note: u8,
+        should_be: Semitones,
+        actual: Semitones,
+        explanation: &'static str,
+    },
+}
+
+pub enum FromUi<T: StackType> {
+    Consider {
+        coefficients: Vec<StackCoeff>,
+        time: Instant,
+    },
+    ToggleTemperament {
+        index: usize,
+        time: Instant,
+    },
+    DisconnectInput,
+    ConnectInput {
+        port: MidiInputPort,
+        portname: String,
+        time: Instant,
+    },
+    DisconnectOutput,
+    ConnectOutput {
+        port: MidiOutputPort,
+        portname: String,
+        time: Instant,
+    },
+    SetReference {
+        reference: Reference<T>,
+        time: Instant,
+    },
+}
+
+pub enum ToMidiIn {
+    Connect {
+        port: MidiInputPort,
+        portname: String,
+    },
+    Disconnect,
     Start,
     Stop,
-    Reset,
-    IncomingMidi { bytes: Vec<u8> },
-    Consider { coefficients: Vec<StackCoeff> },
-    ToggleTemperament { index: usize },
-    Special { code: u8 },
+}
+
+pub enum FromMidiIn {
+    IncomingMidi {
+        time: Instant,
+        bytes: Vec<u8>,
+    },
+    ConnectionError {
+        reason: String,
+    },
+    Connected {
+        portname: String,
+    },
+    Disconnected {
+        available_ports: Vec<(MidiInputPort, String)>,
+    },
+}
+
+pub enum ToMidiOut {
+    OutgoingMidi {
+        time: Instant,
+        bytes: Vec<u8>,
+    },
+    Connect {
+        port: MidiOutputPort,
+        portname: String,
+    },
+    Disconnect,
+    Start,
+    Stop,
+}
+
+pub enum FromMidiOut {
+    EventLatency {
+        since_input: Duration,
+    },
+    ConnectionError {
+        reason: String,
+    },
+    Connected {
+        portname: String,
+    },
+    Disconnected {
+        available_ports: Vec<(MidiOutputPort, String)>,
+    },
+}
+
+impl<T: StackType> MessageTranslate3<ToBackend, ToMidiOut, ToUi<T>> for FromProcess<T> {
+    fn translate3(self) -> (Option<ToBackend>, Option<ToMidiOut>, Option<ToUi<T>>) {
+        match self {
+            FromProcess::Notify { line } => (None {}, None {}, Some(ToUi::Notify { line })),
+            FromProcess::MidiParseErr(err) => (
+                None {},
+                None {},
+                Some(ToUi::Notify {
+                    line: err.to_string(),
+                }),
+            ),
+            FromProcess::OutgoingMidi { bytes, time } => (
+                None {},
+                Some(ToMidiOut::OutgoingMidi { time, bytes }),
+                None {},
+            ),
+            FromProcess::TunedNoteOn {
+                channel,
+                note,
+                velocity,
+                tuning,
+                tuning_stack,
+                time,
+            } => (
+                Some(ToBackend::TunedNoteOn {
+                    channel,
+                    note,
+                    velocity,
+                    tuning,
+                    time,
+                }),
+                None {},
+                Some(ToUi::TunedNoteOn {
+                    channel,
+                    note,
+                    tuning_stack,
+                    time,
+                }),
+            ),
+            FromProcess::FromStrategy(msg) => {
+                let (to_backend, to_ui) = msg.translate2();
+                (to_backend, None {}, to_ui)
+            }
+            FromProcess::NoteOn {
+                channel,
+                note,
+                velocity,
+                time,
+            } => (
+                Some(ToBackend::NoteOn {
+                    channel,
+                    note,
+                    velocity,
+                    time,
+                }),
+                None {},
+                Some(ToUi::NoteOn {
+                    channel,
+                    time,
+                    note,
+                }),
+            ),
+            FromProcess::NoteOff {
+                channel,
+                note,
+                velocity,
+                time,
+                held_by_pedal,
+            } => (
+                Some(ToBackend::NoteOff {
+                    channel,
+                    note,
+                    velocity,
+                    time,
+                }),
+                None {},
+                if held_by_pedal {
+                    None {}
+                } else {
+                    Some(ToUi::NoteOff {
+                        time,
+                        channel,
+                        note,
+                    })
+                },
+            ),
+            FromProcess::PedalHold {
+                value,
+                time,
+                channel,
+            } => (
+                Some(ToBackend::PedalHold {
+                    channel,
+                    value,
+                    time,
+                }),
+                None {},
+                None {},
+            ),
+            FromProcess::ProgramChange {
+                channel,
+                program,
+                time,
+            } => (
+                Some(ToBackend::ProgramChange {
+                    channel,
+                    program,
+                    time,
+                }),
+                None {},
+                None {},
+            ),
+        }
+    }
+}
+
+impl<T: StackType> MessageTranslate2<ToBackend, ToUi<T>> for FromStrategy<T> {
+    fn translate2(self) -> (Option<ToBackend>, Option<ToUi<T>>) {
+        match self {
+            FromStrategy::Retune {
+                note,
+                tuning,
+                tuning_stack,
+                time,
+            } => (
+                Some(ToBackend::Retune { note, tuning, time }),
+                Some(ToUi::Retune { note, tuning_stack }),
+            ),
+            FromStrategy::SetReference { key, stack } => {
+                (None {}, Some(ToUi::SetReference { key, stack }))
+            }
+            FromStrategy::Consider { stack } => (None {}, Some(ToUi::Consider { stack })),
+            FromStrategy::NotifyFit {
+                pattern_name,
+                reference_stack,
+            } => (
+                None {},
+                Some(ToUi::NotifyFit {
+                    pattern_name,
+                    reference_stack,
+                }),
+            ),
+            FromStrategy::NotifyNoFit => (None {}, Some(ToUi::NotifyNoFit)),
+        }
+    }
+}
+
+impl<T: StackType> MessageTranslate4<ToProcess<T>, ToBackend, ToMidiIn, ToMidiOut> for FromUi<T> {
+    fn translate4(
+        self,
+    ) -> (
+        Option<ToProcess<T>>,
+        Option<ToBackend>,
+        Option<ToMidiIn>,
+        Option<ToMidiOut>,
+    ) {
+        match self {
+            FromUi::Consider { coefficients, time } => (
+                Some(ToProcess::ToStrategy(ToStrategy::Consider {
+                    coefficients,
+                    time,
+                })),
+                None {},
+                None {},
+                None {},
+            ),
+            FromUi::ToggleTemperament { index, time } => (
+                Some(ToProcess::ToStrategy(ToStrategy::ToggleTemperament {
+                    index,
+                    time,
+                })),
+                None {},
+                None {},
+                None {},
+            ),
+            FromUi::DisconnectInput => (None {}, None {}, Some(ToMidiIn::Disconnect), None {}),
+            FromUi::ConnectInput {
+                port,
+                portname,
+                time,
+            } => (
+                Some(ToProcess::Reset { time }),
+                Some(ToBackend::Reset { time }),
+                Some(ToMidiIn::Connect { port, portname }),
+                None {},
+            ),
+            FromUi::DisconnectOutput => (None {}, None {}, None {}, Some(ToMidiOut::Disconnect)),
+            FromUi::ConnectOutput {
+                port,
+                portname,
+                time,
+            } => (
+                Some(ToProcess::Reset { time }),
+                Some(ToBackend::Reset { time }),
+                None {},
+                Some(ToMidiOut::Connect { port, portname }),
+            ),
+            FromUi::SetReference { reference, time } => (
+                Some(ToProcess::ToStrategy(ToStrategy::SetReference {
+                    reference,
+                    time,
+                })),
+                None {},
+                None {},
+                None {},
+            ),
+        }
+    }
+}
+
+impl<T: StackType> MessageTranslate2<ToProcess<T>, ToUi<T>> for FromMidiIn {
+    fn translate2(self) -> (Option<ToProcess<T>>, Option<ToUi<T>>) {
+        match self {
+            FromMidiIn::IncomingMidi { time, bytes } => {
+                (Some(ToProcess::IncomingMidi { time, bytes }), None {})
+            }
+            FromMidiIn::ConnectionError { reason } => {
+                (None {}, Some(ToUi::InputConnectionError { reason }))
+            }
+            FromMidiIn::Connected { portname } => {
+                (None {}, Some(ToUi::InputConnected { portname }))
+            }
+            FromMidiIn::Disconnected { available_ports } => {
+                (None {}, Some(ToUi::InputDisconnected { available_ports }))
+            }
+        }
+    }
+}
+
+impl<T: StackType> MessageTranslate<ToUi<T>> for FromMidiOut {
+    fn translate(self) -> Option<ToUi<T>> {
+        match self {
+            FromMidiOut::EventLatency { since_input } => Some(ToUi::EventLatency { since_input }),
+            FromMidiOut::ConnectionError { reason } => Some(ToUi::OutputConnectionError { reason }),
+            FromMidiOut::Connected { portname } => Some(ToUi::OutputConnected { portname }),
+            FromMidiOut::Disconnected { available_ports } => {
+                Some(ToUi::OutputDisconnected { available_ports })
+            }
+        }
+    }
+}
+
+impl<T: StackType> MessageTranslate2<ToMidiOut, ToUi<T>> for FromBackend {
+    fn translate2(self) -> (Option<ToMidiOut>, Option<ToUi<T>>) {
+        match self {
+            FromBackend::OutgoingMidi {
+                time: original_time,
+                bytes,
+            } => (
+                Some(ToMidiOut::OutgoingMidi {
+                    time: original_time,
+                    bytes,
+                }),
+                None {},
+            ),
+            FromBackend::DetunedNote {
+                note,
+                should_be,
+                actual,
+                explanation,
+            } => (
+                None {},
+                Some(ToUi::DetunedNote {
+                    note,
+                    should_be,
+                    actual,
+                    explanation,
+                }),
+            ),
+        }
+    }
+}
+
+impl<T: StackType> HasStop for ToProcess<T> {
+    fn is_stop(&self) -> bool {
+        match self {
+            Self::Stop => true,
+            _ => false,
+        }
+    }
+    fn mk_stop() -> Self {
+        Self::Stop
+    }
+}
+
+impl HasStop for ToBackend {
+    fn is_stop(&self) -> bool {
+        match self {
+            Self::Stop => true,
+            _ => false,
+        }
+    }
+    fn mk_stop() -> Self {
+        Self::Stop
+    }
+}
+
+impl<T: StackType> HasStop for ToUi<T> {
+    fn is_stop(&self) -> bool {
+        match self {
+            Self::Stop => true,
+            _ => false,
+        }
+    }
+    fn mk_stop() -> Self {
+        Self::Stop
+    }
+}
+
+impl HasStop for ToMidiIn {
+    fn is_stop(&self) -> bool {
+        match self {
+            Self::Stop => true,
+            _ => false,
+        }
+    }
+    fn mk_stop() -> Self {
+        Self::Stop
+    }
+}
+
+impl HasStop for ToMidiOut {
+    fn is_stop(&self) -> bool {
+        match self {
+            Self::Stop => true,
+            _ => false,
+        }
+    }
+    fn mk_stop() -> Self {
+        Self::Stop
+    }
 }
