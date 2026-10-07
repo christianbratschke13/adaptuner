@@ -3,6 +3,9 @@ use std::{fmt, marker::PhantomData};
 #[cfg(not(target_arch = "wasm32"))]
 use eframe::{egui, Result};
 
+#[cfg(target_arch = "wasm32")]
+use std::result::Result;
+
 use midi_msg::Channel;
 use ndarray::{Array1, ArrayView1};
 use num_rational::Ratio;
@@ -157,6 +160,7 @@ where
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn serialize_egui_key<S: serde::ser::Serializer>(
     key: &egui::Key,
     ser: S,
@@ -164,6 +168,7 @@ pub fn serialize_egui_key<S: serde::ser::Serializer>(
     ser.serialize_str(key.symbol_or_name())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn deserialize_egui_key<'de, D>(deserializer: D) -> Result<egui::Key, D::Error>
 where
     D: serde::Deserializer<'de>,

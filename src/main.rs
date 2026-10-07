@@ -3,6 +3,7 @@ use midir::{MidiInput, MidiOutput};
 
 use std::error::Error;
 
+#[cfg(not(target_arch = "wasm32"))]
 use adaptuner::{
     backend::pitchbend12::Pitchbend12,
     config::Config,
@@ -12,6 +13,7 @@ use adaptuner::{
     run::RunState,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     if let Err(e) = run() {
         eprintln!("{}", e);
@@ -19,8 +21,10 @@ fn main() {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 const TEMPLATE_CONFIG: &'static str = include_str!("../configs/template.yaml");
 
+#[cfg(not(target_arch = "wasm32"))]
 fn run() -> Result<(), Box<dyn Error>> {
     let config: Config<TheFiveLimitStackType> = serde_yml::from_str(TEMPLATE_CONFIG)?;
     let (process_config, gui_config, backend_config) = config.split();
@@ -39,3 +43,6 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+#[cfg(target_arch = "wasm32")]
+fn main() {}

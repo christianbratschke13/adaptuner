@@ -14,8 +14,7 @@ use crate::{
     msg::{FromStrategy, ToStrategy},
     neighbourhood::Neighbourhood,
     strategy::{
-        r#static::{StaticTuning, StaticTuningConfig},
-        r#trait::StrategyAction,
+        r#static::StaticTuning, r#trait::StrategyAction, static_config::StaticTuningConfig,
     },
 };
 

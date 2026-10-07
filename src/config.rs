@@ -17,8 +17,9 @@ use crate::{
     neighbourhood::{SomeCompleteNeighbourhood, SomeNeighbourhood},
     reference::Reference,
     strategy::{
-        r#static::{StaticTuning, StaticTuningConfig},
+        r#static::StaticTuning,
         r#trait::{Strategy, StrategyAction},
+        static_config::StaticTuningConfig,
         twostep::{
             harmony::chordlist::{keyshape::KeyShape, ChordListConfig, PatternConfig},
             melody::neighbourhoods::NeighbourhoodsConfig,

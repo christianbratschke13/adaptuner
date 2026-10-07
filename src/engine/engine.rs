@@ -1,28 +1,21 @@
-use std::time::{Duration, Instant};
-
 use midi_msg::Channel;
 
-use crate::msg::FromStrategy;
 use crate::{
-    config::Config,
     engine::{IntonationEvent, MidiEvent, MidiMessage},
     interval::{stack::Stack, stacktype::fivelimit::TheFiveLimitStackType},
     keystate::KeyState,
-    msg::FromProcess,
-    strategy::r#static::{StaticTuning, StaticTuningConfig},
+    strategy::{r#static::StaticTuning, static_config::StaticTuningConfig},
 };
 
 pub struct IntonationEngine {
     tuning: StaticTuning<TheFiveLimitStackType>,
     key_states: [KeyState; 128],
     tunings: [Stack<TheFiveLimitStackType>; 128],
-    origin: Instant,
 }
 
 impl IntonationEngine {
-    pub fn from_config(config: Config<TheFiveLimitStackType>) -> Self {
-        let (_, _, _) = config.split();
-
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn from_config(config: crate::config::Config<TheFiveLimitStackType>) -> Self {
         let static_config = config
             .first_static_tuning_config()
             .expect("config must contain a static tuning strategy");
@@ -30,8 +23,9 @@ impl IntonationEngine {
         Self::from_static_tuning(static_config)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn from_template() -> Self {
-        let config: Config<TheFiveLimitStackType> =
+        let config: crate::config::Config<TheFiveLimitStackType> =
             serde_yml::from_str(include_str!("../../configs/template.yaml"))
                 .expect("template config must be valid");
 
@@ -43,13 +37,10 @@ impl IntonationEngine {
     }
 
     fn new(config: StaticTuningConfig<TheFiveLimitStackType>) -> Self {
-        let origin = Instant::now();
-
         Self {
             tuning: StaticTuning::new(config),
-            key_states: core::array::from_fn(|_| KeyState::new(origin)),
+            key_states: core::array::from_fn(|_| KeyState::new()),
             tunings: core::array::from_fn(|_| Stack::new_zero()),
-            origin,
         }
     }
 
@@ -58,21 +49,19 @@ impl IntonationEngine {
     }
 
     pub fn process(&mut self, event: MidiEvent) -> Vec<IntonationEvent> {
-        let time = self.origin + Duration::from_micros(event.time);
-
         match event.message {
             MidiMessage::NoteOn { note, velocity } => {
-                self.process_note_on(event.channel, note, velocity, time)
+                self.process_note_on(event.channel, note, velocity, event.time)
             }
 
             MidiMessage::NoteOff { note, velocity } => {
-                self.process_note_off(event.channel, note, velocity, time)
+                self.process_note_off(event.channel, note, velocity, event.time)
             }
 
             MidiMessage::ControlChange {
                 controller: 64,
                 value,
-            } => self.process_pedal_hold(event.channel, value, time),
+            } => self.process_pedal_hold(event.channel, value, event.time),
 
             MidiMessage::ControlChange { .. } => Vec::new(),
 
@@ -91,13 +80,13 @@ impl IntonationEngine {
         channel: Channel,
         note: u8,
         velocity: u8,
-        time: Instant,
+        time: u64,
     ) -> Vec<IntonationEvent> {
-        let state_changed = self.key_states[note as usize].note_on(channel, time);
+        let state_changed = self.key_states[note as usize].note_on(channel);
 
         if !state_changed {
             return vec![IntonationEvent::NoteOn {
-                time: self.timestamp(time),
+                time,
                 channel,
                 note,
                 velocity,
@@ -107,7 +96,7 @@ impl IntonationEngine {
         let (tuning, _, updated) = self.tuning.tuning_for_note(&mut self.tunings, note);
 
         let mut events = vec![IntonationEvent::TunedNoteOn {
-            time: self.timestamp(time),
+            time,
             channel,
             note,
             velocity,
@@ -115,11 +104,7 @@ impl IntonationEngine {
         }];
 
         if updated {
-            events.push(IntonationEvent::Retune {
-                time: self.timestamp(time),
-                note,
-                tuning,
-            });
+            events.push(IntonationEvent::Retune { time, note, tuning });
         }
 
         events
@@ -130,12 +115,12 @@ impl IntonationEngine {
         channel: Channel,
         note: u8,
         velocity: u8,
-        time: Instant,
+        time: u64,
     ) -> Vec<IntonationEvent> {
-        self.key_states[note as usize].note_off(channel, false, time);
+        self.key_states[note as usize].note_off(channel, false);
 
         vec![IntonationEvent::NoteOff {
-            time: self.timestamp(time),
+            time,
             channel,
             note,
             velocity,
@@ -146,96 +131,18 @@ impl IntonationEngine {
         &mut self,
         channel: Channel,
         value: u8,
-        time: Instant,
+        time: u64,
     ) -> Vec<IntonationEvent> {
         vec![IntonationEvent::ControlChange {
-            time: self.timestamp(time),
+            time,
             channel,
             controller: 64,
             value,
         }]
     }
-
-    fn timestamp(&self, time: Instant) -> u64 {
-        time.duration_since(self.origin).as_micros() as u64
-    }
-
-    fn map_event(&self, event: FromProcess<TheFiveLimitStackType>) -> Option<IntonationEvent> {
-        match event {
-            FromProcess::TunedNoteOn {
-                channel,
-                note,
-                velocity,
-                tuning,
-                time,
-                ..
-            } => Some(IntonationEvent::TunedNoteOn {
-                time: self.timestamp(time),
-                channel,
-                note,
-                velocity,
-                tuning,
-            }),
-
-            FromProcess::NoteOn {
-                channel,
-                note,
-                velocity,
-                time,
-            } => Some(IntonationEvent::NoteOn {
-                time: self.timestamp(time),
-                channel,
-                note,
-                velocity,
-            }),
-
-            FromProcess::NoteOff {
-                channel,
-                note,
-                velocity,
-                time,
-            } => Some(IntonationEvent::NoteOff {
-                time: self.timestamp(time),
-                channel,
-                note,
-                velocity,
-            }),
-
-            FromProcess::PedalHold {
-                channel,
-                value,
-                time,
-            } => Some(IntonationEvent::ControlChange {
-                time: self.timestamp(time),
-                channel,
-                controller: 64,
-                value,
-            }),
-
-            FromProcess::ProgramChange {
-                channel,
-                program,
-                time,
-            } => Some(IntonationEvent::ProgramChange {
-                time: self.timestamp(time),
-                channel,
-                program,
-            }),
-
-            FromProcess::FromStrategy(FromStrategy::Retune {
-                note, tuning, time, ..
-            }) => Some(IntonationEvent::Retune {
-                time: self.timestamp(time),
-                note,
-                tuning,
-            }),
-
-            _ => None,
-        }
-    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::config::Config;
