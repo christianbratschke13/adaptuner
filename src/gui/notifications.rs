@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui;
 
 use crate::{

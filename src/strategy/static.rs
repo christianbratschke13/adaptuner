@@ -403,3 +403,18 @@ impl<T: StackType> ExtractConfig<StrategyConfig<T>> for StaticTuning<T> {
         })
     }
 }
+
+impl<T: StackType> StaticTuning<T> {
+    pub fn tuning_for_note(
+        &mut self,
+        tunings: &mut [Stack<T>; 128],
+        note: u8,
+    ) -> (f64, Stack<T>, bool) {
+        let updated = self.update_tuning(tunings, note).unwrap_or(false);
+
+        let tuning = tunings[note as usize].clone();
+        let semitones = tuning.absolute_semitones(self.tuning_reference.c4_semitones());
+
+        (semitones, tuning, updated)
+    }
+}

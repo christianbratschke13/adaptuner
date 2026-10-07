@@ -1,13 +1,19 @@
 use std::{cell::RefCell, rc::Rc, sync::mpsc, time::Instant};
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui;
+
 use serde_derive::{Deserialize, Serialize};
 
 use crate::{
-    config::ExtractConfig, gui::{
+    config::ExtractConfig,
+    gui::{
         common::{note_picker, CorrectionSystemChooser},
         r#trait::GuiShow,
-    }, interval::{stack::Stack, stacktype::r#trait::StackType}, msg::{FromUi, ReceiveMsgRef, ToUi}, notename::{correction::Correction, HasNoteNames, NoteNameStyle}
+    },
+    interval::{stack::Stack, stacktype::r#trait::StackType},
+    msg::{FromUi, ReceiveMsgRef, ToUi},
+    notename::{correction::Correction, HasNoteNames, NoteNameStyle},
 };
 
 pub struct ReferenceEditor<T: StackType> {

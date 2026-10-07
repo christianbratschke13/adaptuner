@@ -1,5 +1,6 @@
 use std::sync::mpsc;
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui::{self, Popup};
 
 use crate::{
@@ -303,11 +304,8 @@ pub fn strategy_action_selector(
             }
 
             if strategy_kind.action_allowed(&StrategyAction::Reset) {
-                let r = ui.selectable_value(
-                    tmp_strategy_action,
-                    Some(StrategyAction::Reset),
-                    "reset",
-                );
+                let r =
+                    ui.selectable_value(tmp_strategy_action, Some(StrategyAction::Reset), "reset");
                 if r.clicked() {
                     changed = r.changed();
                     close_popup(ui);

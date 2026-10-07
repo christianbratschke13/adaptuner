@@ -1,4 +1,6 @@
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui::{self, vec2};
+
 use ndarray::{Array1, Array2};
 
 use crate::{
@@ -108,9 +110,7 @@ impl<T: StackType> CommaEditor<T> {
             self.possible_bases = compute_possible_bases(&self.commas);
         }
         if self.possible_bases.is_empty() {
-            ui.label(
-                "These commas won't be usable in note names, because no basis can be formed.",
-            );
+            ui.label("These commas won't be usable in note names, because no basis can be formed.");
         } else {
             ui.collapsing("Possible bases with these commas", |ui| {
                 for b in &self.possible_bases {

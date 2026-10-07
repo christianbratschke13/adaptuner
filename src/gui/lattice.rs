@@ -1,6 +1,8 @@
 use std::{cell::RefCell, hash::Hash, rc::Rc, sync::mpsc, time::Instant};
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui::{self, pos2, vec2, Popup, PopupCloseBehavior};
+
 use midi_msg::Channel;
 use serde_derive::{Deserialize, Serialize};
 
@@ -349,7 +351,7 @@ impl<T: StackType + HasNoteNames> OneNodeDrawState<T> {
             .id(popup_id)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
-            if temperament_applier(
+                if temperament_applier(
                     Some(&format!(
                         "make pure relative to {}",
                         reference.corrected_notename(
@@ -374,7 +376,7 @@ impl<T: StackType + HasNoteNames> OneNodeDrawState<T> {
                         time: Instant::now(),
                     });
                 }
-        });
+            });
     }
 
     fn draw_note_and_interaction_zone(

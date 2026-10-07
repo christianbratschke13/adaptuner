@@ -1,25 +1,33 @@
 use std::time::{Duration, Instant};
 
+use midi_msg::Channel;
+
+use crate::msg::FromStrategy;
 use crate::{
-    bindable::Bindings,
-    config::{Config, FromConfigAndState, ProcessConfig, StrategyConfig},
-    engine::event::{IntonationEvent, MidiEvent, MidiMessage},
-    interval::stacktype::fivelimit::TheFiveLimitStackType,
-    msg::{FromProcess, FromStrategy},
-    process::fromstrategy::ProcessFromStrategy,
-    strategy::r#static::StaticTuningConfig,
+    config::Config,
+    engine::{IntonationEvent, MidiEvent, MidiMessage},
+    interval::{stack::Stack, stacktype::fivelimit::TheFiveLimitStackType},
+    keystate::KeyState,
+    msg::FromProcess,
+    strategy::r#static::{StaticTuning, StaticTuningConfig},
 };
 
 pub struct IntonationEngine {
-    process: ProcessFromStrategy<TheFiveLimitStackType>,
+    tuning: StaticTuning<TheFiveLimitStackType>,
+    key_states: [KeyState; 128],
+    tunings: [Stack<TheFiveLimitStackType>; 128],
     origin: Instant,
 }
 
 impl IntonationEngine {
     pub fn from_config(config: Config<TheFiveLimitStackType>) -> Self {
-        let (process_config, _, _) = config.split();
+        let (_, _, _) = config.split();
 
-        Self::new(process_config)
+        let static_config = config
+            .first_static_tuning_config()
+            .expect("config must contain a static tuning strategy");
+
+        Self::from_static_tuning(static_config)
     }
 
     pub fn from_template() -> Self {
@@ -34,49 +42,118 @@ impl IntonationEngine {
         Self::from_static_tuning(static_config)
     }
 
-    fn new(process_config: ProcessConfig<TheFiveLimitStackType>) -> Self {
+    fn new(config: StaticTuningConfig<TheFiveLimitStackType>) -> Self {
+        let origin = Instant::now();
+
         Self {
-            process: ProcessFromStrategy::initialise(process_config, ()),
-            origin: Instant::now(),
+            tuning: StaticTuning::new(config),
+            key_states: core::array::from_fn(|_| KeyState::new(origin)),
+            tunings: core::array::from_fn(|_| Stack::new_zero()),
+            origin,
         }
     }
 
     pub fn from_static_tuning(config: StaticTuningConfig<TheFiveLimitStackType>) -> Self {
-        let process_config = ProcessConfig {
-            strategies: vec![(StrategyConfig::StaticTuning(config), Bindings::empty())],
-        };
-
-        Self::new(process_config)
+        Self::new(config)
     }
 
     pub fn process(&mut self, event: MidiEvent) -> Vec<IntonationEvent> {
         let time = self.origin + Duration::from_micros(event.time);
 
-        let messages = match event.message {
+        match event.message {
             MidiMessage::NoteOn { note, velocity } => {
-                self.process.note_on(event.channel, note, velocity, time)
+                self.process_note_on(event.channel, note, velocity, time)
             }
 
             MidiMessage::NoteOff { note, velocity } => {
-                self.process.note_off(event.channel, note, velocity, time)
+                self.process_note_off(event.channel, note, velocity, time)
             }
 
             MidiMessage::ControlChange {
                 controller: 64,
                 value,
-            } => self.process.pedal_hold(event.channel, value, time),
+            } => self.process_pedal_hold(event.channel, value, time),
 
             MidiMessage::ControlChange { .. } => Vec::new(),
 
             MidiMessage::ProgramChange { program } => {
-                self.process.program_change(event.channel, program, time)
+                vec![IntonationEvent::ProgramChange {
+                    time: event.time,
+                    channel: event.channel,
+                    program,
+                }]
             }
-        };
+        }
+    }
 
-        messages
-            .into_iter()
-            .filter_map(|event| self.map_event(event))
-            .collect()
+    fn process_note_on(
+        &mut self,
+        channel: Channel,
+        note: u8,
+        velocity: u8,
+        time: Instant,
+    ) -> Vec<IntonationEvent> {
+        let state_changed = self.key_states[note as usize].note_on(channel, time);
+
+        if !state_changed {
+            return vec![IntonationEvent::NoteOn {
+                time: self.timestamp(time),
+                channel,
+                note,
+                velocity,
+            }];
+        }
+
+        let (tuning, _, updated) = self.tuning.tuning_for_note(&mut self.tunings, note);
+
+        let mut events = vec![IntonationEvent::TunedNoteOn {
+            time: self.timestamp(time),
+            channel,
+            note,
+            velocity,
+            tuning,
+        }];
+
+        if updated {
+            events.push(IntonationEvent::Retune {
+                time: self.timestamp(time),
+                note,
+                tuning,
+            });
+        }
+
+        events
+    }
+
+    fn process_note_off(
+        &mut self,
+        channel: Channel,
+        note: u8,
+        velocity: u8,
+        time: Instant,
+    ) -> Vec<IntonationEvent> {
+        self.key_states[note as usize].note_off(channel, false, time);
+
+        vec![IntonationEvent::NoteOff {
+            time: self.timestamp(time),
+            channel,
+            note,
+            velocity,
+        }]
+    }
+
+    fn process_pedal_hold(
+        &mut self,
+        channel: Channel,
+        value: u8,
+        time: Instant,
+    ) -> Vec<IntonationEvent> {
+        vec![IntonationEvent::ControlChange {
+            time: self.timestamp(time),
+            channel,
+            controller: 64,
+            value,
+        }]
     }
 
     fn timestamp(&self, time: Instant) -> u64 {
@@ -634,5 +711,26 @@ mod tests {
             .collect();
 
         assert_eq!(output_a, output_b);
+    }
+
+    #[test]
+    fn print_tuned_note_values() {
+        let mut engine = engine_from_template();
+
+        for note in [60, 64, 67] {
+            let events = process(
+                &mut engine,
+                MidiMessage::NoteOn {
+                    note,
+                    velocity: 100,
+                },
+            );
+
+            for event in events {
+                if let IntonationEvent::TunedNoteOn { note, tuning, .. } = event {
+                    println!("MIDI note {note} -> tuning {tuning:?}");
+                }
+            }
+        }
     }
 }

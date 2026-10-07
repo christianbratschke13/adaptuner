@@ -1,4 +1,4 @@
-use std::cell::{Ref, RefMut, RefCell};
+use std::cell::{Ref, RefCell, RefMut};
 
 /// A [RefCell]-like type that allows an update function. This cell can either contain someting or
 /// nothing. If you apply an action that expects the cell to be non-empty, it will panic.
@@ -35,7 +35,7 @@ impl<X> UpdateCell<X> {
                 .unwrap_or_else(|| panic!("tried to borrow empty UpdateCell"))
         })
     }
-    
+
     pub fn borrow_mut(&self) -> RefMut<'_, X> {
         let Self(cell) = self;
         RefMut::map(cell.borrow_mut(), |x| {

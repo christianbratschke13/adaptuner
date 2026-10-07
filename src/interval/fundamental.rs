@@ -36,7 +36,7 @@ pub trait HasFundamental: StackType {
         }
     }
 
-    /// Compute the fundamental of many notes. 
+    /// Compute the fundamental of many notes.
     ///
     /// Will panic if `notes` doesn't contain at least one element.
     fn fundamental_many<'a, I>(mut notes: I) -> Stack<Self>

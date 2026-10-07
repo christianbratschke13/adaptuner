@@ -285,3 +285,238 @@ fn template_engine_has_public_api() {
         Some(IntonationEvent::TunedNoteOn { note: 60, .. })
     ));
 }
+
+#[test]
+fn processing_preserves_midi_timing() {
+    let mut engine = IntonationEngine::from_template();
+
+    let input = vec![
+        MidiEvent {
+            time: 123,
+            channel: Channel::Ch1,
+            message: MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100,
+            },
+        },
+        MidiEvent {
+            time: 456_789,
+            channel: Channel::Ch1,
+            message: MidiMessage::NoteOff {
+                note: 60,
+                velocity: 0,
+            },
+        },
+    ];
+
+    let output: Vec<_> = input
+        .into_iter()
+        .flat_map(|event| engine.process(event))
+        .collect();
+
+    assert!(matches!(
+        output[0],
+        IntonationEvent::TunedNoteOn {
+            time: 123,
+            note: 60,
+            ..
+        }
+    ));
+
+    assert!(matches!(
+        output
+            .iter()
+            .find(|event| matches!(event, IntonationEvent::NoteOff { .. })),
+        Some(IntonationEvent::NoteOff {
+            time: 456_789,
+            note: 60,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn processes_complete_midi_sequence() {
+    let mut engine = engine_from_template();
+
+    let input = [
+        MidiEvent {
+            time: 0,
+            channel: Channel::Ch1,
+            message: MidiMessage::NoteOn {
+                note: 60,
+                velocity: 100,
+            },
+        },
+        MidiEvent {
+            time: 500_000,
+            channel: Channel::Ch1,
+            message: MidiMessage::NoteOff {
+                note: 60,
+                velocity: 0,
+            },
+        },
+        MidiEvent {
+            time: 500_000,
+            channel: Channel::Ch1,
+            message: MidiMessage::NoteOn {
+                note: 64,
+                velocity: 100,
+            },
+        },
+        MidiEvent {
+            time: 1_000_000,
+            channel: Channel::Ch1,
+            message: MidiMessage::NoteOff {
+                note: 64,
+                velocity: 0,
+            },
+        },
+    ];
+
+    let output: Vec<_> = input
+        .into_iter()
+        .flat_map(|event| engine.process(event))
+        .collect();
+
+    assert_eq!(output.len(), 6);
+
+    assert!(matches!(
+        output[0],
+        IntonationEvent::TunedNoteOn {
+            time: 0,
+            note: 60,
+            velocity: 100,
+            ..
+        }
+    ));
+
+    assert!(matches!(
+        output[1],
+        IntonationEvent::Retune {
+            time: 0,
+            note: 60,
+            ..
+        }
+    ));
+
+    assert!(matches!(
+        output[2],
+        IntonationEvent::NoteOff {
+            time: 500_000,
+            note: 60,
+            velocity: 0,
+            ..
+        }
+    ));
+
+    assert!(matches!(
+        output[3],
+        IntonationEvent::TunedNoteOn {
+            time: 500_000,
+            note: 64,
+            velocity: 100,
+            ..
+        }
+    ));
+
+    assert!(matches!(
+        output[4],
+        IntonationEvent::Retune {
+            time: 500_000,
+            note: 64,
+            ..
+        }
+    ));
+
+    assert!(matches!(
+        output[5],
+        IntonationEvent::NoteOff {
+            time: 1_000_000,
+            note: 64,
+            velocity: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn same_note_on_on_same_channel_is_not_tuned_twice() {
+    let mut engine = engine_from_template();
+
+    let first = engine.process(MidiEvent {
+        time: 0,
+        channel: Channel::Ch1,
+        message: MidiMessage::NoteOn {
+            note: 58,
+            velocity: 61,
+        },
+    });
+
+    let second = engine.process(MidiEvent {
+        time: 0,
+        channel: Channel::Ch1,
+        message: MidiMessage::NoteOn {
+            note: 58,
+            velocity: 76,
+        },
+    });
+
+    assert!(first.iter().any(|event| matches!(
+        event,
+        IntonationEvent::TunedNoteOn {
+            note: 58,
+            velocity: 61,
+            ..
+        }
+    )));
+
+    assert!(second.iter().any(|event| matches!(
+        event,
+        IntonationEvent::NoteOn {
+            note: 58,
+            velocity: 76,
+            ..
+        }
+    )));
+
+    assert!(!second
+        .iter()
+        .any(|event| matches!(event, IntonationEvent::TunedNoteOn { .. })));
+}
+
+#[test]
+fn chord_produces_absolute_tuned_midi_pitches() {
+    let mut engine = engine_from_template();
+
+    let mut tuned = Vec::new();
+
+    for note in [60, 64, 67] {
+        let events = engine.process(MidiEvent {
+            time: 0,
+            channel: Channel::Ch1,
+            message: MidiMessage::NoteOn {
+                note: note,
+                velocity: 100,
+            },
+        });
+
+        let tuning = events.iter().find_map(|event| match event {
+            IntonationEvent::TunedNoteOn {
+                note: event_note,
+                tuning,
+                ..
+            } if *event_note == note => Some(*tuning),
+            _ => None,
+        });
+
+        tuned.push((note, tuning.expect("note should be tuned")));
+    }
+
+    for (note, tuned_note) in tuned {
+        assert!(
+            (tuned_note - note as f64).abs() < 1.0,
+            "unexpected tuned MIDI pitch: {note} -> {tuned_note}"
+        );
+    }
+}

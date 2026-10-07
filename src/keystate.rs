@@ -61,9 +61,9 @@ impl KeyState {
 
 #[cfg(test)]
 mod test {
-    use std::time::Instant;
     use super::KeyState;
     use midi_msg::Channel::*;
+    use std::time::Instant;
 
     #[test]
     fn pedal_off_test() {

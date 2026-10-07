@@ -1,7 +1,10 @@
 use std::time::SystemTime;
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui::{self, vec2};
+#[cfg(not(target_arch = "wasm32"))]
 use egui_file_dialog::{DirectoryEntry, FileDialog, FileDialogConfig};
+
 use serde::{Deserialize, Serialize};
 
 use crate::{

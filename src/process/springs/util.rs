@@ -1566,9 +1566,7 @@ mod test {
                 provide_candidate_springs,
                 provide_candidate_anchors,
                 |s| match s[..] {
-                    [(7, n)] => {
-                        Stack::from_pure_interval(MockFiveLimitStackType::fifth_index(), n)
-                    }
+                    [(7, n)] => Stack::from_pure_interval(MockFiveLimitStackType::fifth_index(), n),
                     _ => unreachable!(),
                 },
                 &mut solver,

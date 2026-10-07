@@ -139,7 +139,6 @@ impl KeyShape {
     }
 }
 
-
 /// returns the index of either the first [Fit::Complete] fit or the best [Fit::Partial] fit.
 pub fn first_complete_fit_or_best<'a, N: HasActivationStatus>(
     notes: &[N; 128],

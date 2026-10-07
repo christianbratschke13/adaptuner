@@ -4,7 +4,9 @@ use std::{
     time::Instant,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui;
+#[cfg(not(target_arch = "wasm32"))]
 use midir::{MidiInput, MidiOutput};
 
 use crate::{
@@ -114,7 +116,11 @@ fn setup_fonts(ctx: &egui::Context) {
         FontData::from_static(include_bytes!("../assets/InterMusic.ttf")).into(),
     );
 
-    fonts.families.get_mut(&FontFamily::Proportional).unwrap().insert(0, "inter_music".to_owned());
+    fonts
+        .families
+        .get_mut(&FontFamily::Proportional)
+        .unwrap()
+        .insert(0, "inter_music".to_owned());
 
     ctx.set_fonts(fonts);
 }

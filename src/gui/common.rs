@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui;
+
 use num_rational::Ratio;
 
 use crate::{

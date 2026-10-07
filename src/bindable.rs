@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, fmt};
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui;
+
 use serde_derive::{Deserialize, Serialize};
 
 use crate::{

@@ -81,7 +81,7 @@ impl<T: IntervalBasis> PeriodicNeighbourhood<T> for PeriodicPartial<T> {}
 
 impl<T: IntervalBasis> Neighbourhood<T> for PeriodicPartial<T> {
     fn insert(&mut self, stack: &Stack<T>) -> &Stack<T> {
-        let n = self.period_keys(); 
+        let n = self.period_keys();
         let quot = stack.key_distance().div_euclid(n);
         let rem = stack.key_distance().rem_euclid(n) as usize;
         self.stacks[rem].0.clone_from(stack);

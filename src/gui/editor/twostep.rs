@@ -1,5 +1,6 @@
 use std::sync::mpsc;
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui;
 
 use crate::{

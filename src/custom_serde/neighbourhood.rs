@@ -106,9 +106,7 @@ impl<'de, T: IntervalBasis + serde::Deserialize<'de>> serde::Deserialize<'de>
                 }
             }
 
-            if let Some((offset, stack)) = map
-                .iter()
-                .find(|(i, stack)| stack.key_distance() != **i)
+            if let Some((offset, stack)) = map.iter().find(|(i, stack)| stack.key_distance() != **i)
             {
                 return Err(serde::de::Error::custom(format!(
                     "the stack for entry {offset} describes an interval spanning {} keys",
@@ -166,9 +164,8 @@ impl<'de, T: IntervalBasis + serde::Deserialize<'de>> serde::Deserialize<'de>
                 }
             }
 
-            if let Some((offset, stack)) = stacks
-                .iter()
-                .find(|(i, stack)| stack.key_distance() != **i)
+            if let Some((offset, stack)) =
+                stacks.iter().find(|(i, stack)| stack.key_distance() != **i)
             {
                 return Err(serde::de::Error::custom(format!(
                     "the stack for entry {offset} describes an interval spanning {} keys",
@@ -200,9 +197,7 @@ impl<'de, T: IntervalBasis + serde::Deserialize<'de>> serde::Deserialize<'de> fo
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let NoDuplicates { stacks } = <_>::deserialize(deserializer)?;
 
-        if let Some((offset, stack)) = stacks
-            .iter()
-            .find(|(i, stack)| stack.key_distance() != **i)
+        if let Some((offset, stack)) = stacks.iter().find(|(i, stack)| stack.key_distance() != **i)
         {
             return Err(serde::de::Error::custom(format!(
                 "the stack for entry {offset} describes an interval spanning {} keys",

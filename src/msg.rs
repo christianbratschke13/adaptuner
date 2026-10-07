@@ -4,6 +4,8 @@ use std::{
 };
 
 use midi_msg::Channel;
+
+#[cfg(not(target_arch = "wasm32"))]
 use midir::{MidiInputPort, MidiOutputPort};
 
 use crate::{

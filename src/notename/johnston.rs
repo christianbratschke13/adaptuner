@@ -131,8 +131,8 @@ pub mod fivelimit {
             if sf > 0 {
                 for _ in 0..(sf / 2) {
                     write!(f, "\u{1D12A}")?; // double sharp
-                } 
-                if sf % 2 == 1 {   
+                }
+                if sf % 2 == 1 {
                     write!(f, "\u{266F}")?; // sharp
                 }
             }

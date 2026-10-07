@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui::{self, pos2, vec2};
+
 use similar::{ChangeTag, TextDiff};
 
 const DIFF_FONT_ID: egui::FontId = egui::FontId {
@@ -44,7 +46,7 @@ impl DiffShow {
             underline: egui::Stroke::NONE,
             strikethrough: egui::Stroke::NONE,
             valign: egui::Align::Min,
-            expand_bg: 1.0
+            expand_bg: 1.0,
         };
 
         let format_right = egui::TextFormat {

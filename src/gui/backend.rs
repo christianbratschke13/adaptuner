@@ -1,6 +1,8 @@
 use std::{sync::mpsc, time::Instant};
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui;
+
 use midi_msg::Channel;
 
 use crate::{

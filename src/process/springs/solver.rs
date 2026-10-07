@@ -1,8 +1,6 @@
 //! For motivation, see doc/springs.tex
 
-use ndarray::{
-    azip, linalg::general_mat_mul, s, Array1, Array2, ArrayView1, ArrayView2,
-};
+use ndarray::{azip, linalg::general_mat_mul, s, Array1, Array2, ArrayView1, ArrayView2};
 use num_rational::Ratio;
 
 use crate::{interval::stacktype::r#trait::StackCoeff, util::lu};
@@ -212,11 +210,7 @@ mod test {
         workspace.solve().unwrap()
     }
 
-    fn one_case(
-        workspace: &mut Solver,
-        spec: &SystemSpec,
-        expected: &Array2<Ratio<StackCoeff>>,
-    ) {
+    fn one_case(workspace: &mut Solver, spec: &SystemSpec, expected: &Array2<Ratio<StackCoeff>>) {
         let actual = initialise_and_solve(workspace, spec);
         assert_eq!(expected.view(), actual.view())
     }

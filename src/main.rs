@@ -1,3 +1,6 @@
+#[cfg(not(target_arch = "wasm32"))]
+use midir::{MidiInput, MidiOutput};
+
 use std::error::Error;
 
 use adaptuner::{
@@ -23,8 +26,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let (process_config, gui_config, backend_config) = config.split();
     TheFiveLimitStackType::initialise(config.temperaments, config.named_intervals)?;
 
-    let midi_in = midir::MidiInput::new("adaptuner input")?;
-    let midi_out = midir::MidiOutput::new("adaptuner output")?;
+    let midi_in = MidiInput::new("adaptuner input")?;
+    let midi_out = MidiOutput::new("adaptuner output")?;
 
     let _runstate = RunState::new::<ProcessFromStrategy<TheFiveLimitStackType>, Pitchbend12, _, _>(
         midi_in,

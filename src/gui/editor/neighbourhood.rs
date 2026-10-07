@@ -1,5 +1,6 @@
 use std::{marker::PhantomData, sync::mpsc, time::Instant};
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui::{self, vec2};
 
 use crate::{

@@ -1,4 +1,6 @@
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui::{self, vec2};
+
 use ndarray::{Array2, ArrayView1};
 
 use crate::{

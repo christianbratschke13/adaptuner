@@ -1,6 +1,8 @@
 use std::{cell::RefCell, hash::Hash, rc::Rc, sync::mpsc, time::Instant};
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::{self, egui};
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -294,10 +296,7 @@ where
                     self.current_config = self.extract_config();
                     self.temperament_editor = TemperamentEditor::new();
                 }
-                if self
-                    .comma_editor_window
-                    .show_hide_button(ui, "commas")
-                {
+                if self.comma_editor_window.show_hide_button(ui, "commas") {
                     self.current_config = self.extract_config();
                     self.comma_editor = CommaEditor::new();
                 }

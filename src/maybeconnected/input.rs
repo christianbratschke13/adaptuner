@@ -1,5 +1,6 @@
 use std::{sync::mpsc, time::Instant};
 
+#[cfg(not(target_arch = "wasm32"))]
 use midir::{MidiInput, MidiInputConnection, MidiInputPort};
 
 use crate::{

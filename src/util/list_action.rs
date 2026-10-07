@@ -8,8 +8,12 @@ pub enum ListAction {
 }
 
 impl ListAction {
-
-    pub fn apply_to<X>(self, clone: impl Fn(&X) -> X, vec: &mut Vec<X>, selected: &mut Option<usize>) {
+    pub fn apply_to<X>(
+        self,
+        clone: impl Fn(&X) -> X,
+        vec: &mut Vec<X>,
+        selected: &mut Option<usize>,
+    ) {
         match self {
             ListAction::Delete(i) => {
                 vec.remove(i);

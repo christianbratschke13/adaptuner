@@ -5,6 +5,7 @@ use crate::{
     interval::stacktype::r#trait::StackType,
     msg::{self, ReceiveMsgRef, ToUi},
 };
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::{self, egui};
 
 pub struct LatencyWindow {

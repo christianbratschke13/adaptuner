@@ -139,11 +139,14 @@ impl<T: IntervalBasis> Config<T> {
     pub fn split(&self) -> (ProcessConfig<T>, GuiConfig<T>, BackendConfig) {
         let mut process = Vec::with_capacity(self.strategies.len());
         let mut ui = Vec::with_capacity(self.strategies.len());
+
         self.strategies.iter().for_each(|esc| {
             let (sc, bs, ns) = esc.split();
+
             process.push((sc, bs.only_midi()));
             ui.push((ns, bs))
         });
+
         (
             ProcessConfig {
                 strategies: process,
@@ -184,8 +187,10 @@ impl<T: IntervalBasis> Config<T> {
                     .strategies
                     .drain(..)
                     .zip(gui.strategies.drain(..))
-                    .map(|((strat, _midi_bindings), (names, bindings))| {
-                        <NamedAndDescribed<ExtendedStrategyConfig<T>>>::join(strat, bindings, names)
+                    .map(|(strategy, (names, bindings))| {
+                        <NamedAndDescribed<ExtendedStrategyConfig<T>>>::join(
+                            strategy.0, bindings, names,
+                        )
                     })
                     .collect()
             },

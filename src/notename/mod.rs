@@ -1,6 +1,5 @@
 use std::fmt;
 
-use serde_derive::{Deserialize, Serialize};
 use crate::interval::{
     stack::Stack,
     stacktype::{
@@ -8,6 +7,7 @@ use crate::interval::{
         r#trait::{IntervalBasis, StackCoeff, StackType},
     },
 };
+use serde_derive::{Deserialize, Serialize};
 
 pub mod correction;
 pub mod johnston;

@@ -1,6 +1,8 @@
 use std::{fmt, marker::PhantomData};
 
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::{egui, Result};
+
 use midi_msg::Channel;
 use ndarray::{Array1, ArrayView1};
 use num_rational::Ratio;
