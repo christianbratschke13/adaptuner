@@ -27,6 +27,24 @@ pub struct ProcessFromStrategy<T: StackType> {
     queue: VecDeque<FromStrategy<T>>,
 }
 
+enum ProcessOutput<'a, T: StackType> {
+    Channel(&'a mpsc::Sender<FromProcess<T>>),
+    Vec(&'a mut Vec<FromProcess<T>>),
+}
+
+impl<T: StackType> ProcessOutput<'_, T> {
+    fn send(&mut self, message: FromProcess<T>) {
+        match self {
+            Self::Channel(sender) => {
+                let _ = sender.send(message);
+            }
+            Self::Vec(messages) => {
+                messages.push(message);
+            }
+        }
+    }
+}
+
 impl<T: StackType> ProcessFromStrategy<T> {
     pub fn new(strategies: Vec<(Box<dyn Strategy<T>>, Bindings<MidiBindable>)>) -> Self {
         let now = Instant::now();
@@ -48,9 +66,9 @@ impl<T: StackType> ProcessFromStrategy<T> {
 }
 
 impl<T: StackType> ProcessFromStrategy<T> {
-    fn handle_midi(&mut self, time: Instant, msg: MidiMsg, forward: &mpsc::Sender<FromProcess<T>>) {
-        let forward_untouched = || {
-            let _ = forward.send(FromProcess::OutgoingMidi {
+    fn handle_midi(&mut self, time: Instant, msg: MidiMsg, forward: &mut ProcessOutput<T>) {
+        let mut forward_untouched = || {
+            forward.send(FromProcess::OutgoingMidi {
                 bytes: msg.to_midi(),
                 time,
             });
@@ -65,6 +83,7 @@ impl<T: StackType> ProcessFromStrategy<T> {
                 channel,
                 msg: NoteOff { note, velocity },
             } => self.handle_note_off(time, note, channel, velocity, forward),
+
             MidiMsg::ChannelVoice {
                 channel,
                 msg: ControlChange {
@@ -97,7 +116,7 @@ impl<T: StackType> ProcessFromStrategy<T> {
                             &mut self.queue,
                         );
                         self.queue.drain(..).for_each(|msg| {
-                            let _ = forward.send(FromProcess::FromStrategy(msg));
+                            forward.send(FromProcess::FromStrategy(msg));
                         });
                     } else {
                         forward_untouched();
@@ -130,7 +149,7 @@ impl<T: StackType> ProcessFromStrategy<T> {
                             &mut self.queue,
                         );
                         self.queue.drain(..).for_each(|msg| {
-                            let _ = forward.send(FromProcess::FromStrategy(msg));
+                            forward.send(FromProcess::FromStrategy(msg));
                         });
                     } else {
                         forward_untouched();
@@ -142,7 +161,7 @@ impl<T: StackType> ProcessFromStrategy<T> {
                 channel,
                 msg: ProgramChange { program },
             } => {
-                let _ = forward.send(FromProcess::ProgramChange {
+                forward.send(FromProcess::ProgramChange {
                     channel,
                     program,
                     time,
@@ -159,10 +178,10 @@ impl<T: StackType> ProcessFromStrategy<T> {
         note: u8,
         channel: Channel,
         velocity: u8,
-        forward: &mpsc::Sender<FromProcess<T>>,
+        forward: &mut ProcessOutput<T>,
     ) {
-        let send_simple_note_on = || {
-            let _ = forward.send(FromProcess::NoteOn {
+        let mut send_simple_note_on = || {
+            forward.send(FromProcess::NoteOn {
                 channel,
                 note,
                 velocity,
@@ -180,7 +199,7 @@ impl<T: StackType> ProcessFromStrategy<T> {
                     &mut self.queue,
                 ) {
                     Some((tuning, tuning_stack)) => {
-                        let _ = forward.send(FromProcess::TunedNoteOn {
+                        forward.send(FromProcess::TunedNoteOn {
                             channel,
                             note,
                             velocity,
@@ -189,7 +208,7 @@ impl<T: StackType> ProcessFromStrategy<T> {
                             time,
                         });
                         self.queue.drain(..).for_each(|msg| {
-                            let _ = forward.send(FromProcess::FromStrategy(msg));
+                            forward.send(FromProcess::FromStrategy(msg));
                         });
                     }
                     None {} => {
@@ -209,7 +228,7 @@ impl<T: StackType> ProcessFromStrategy<T> {
         note: u8,
         channel: Channel,
         velocity: u8,
-        forward: &mpsc::Sender<FromProcess<T>>,
+        forward: &mut ProcessOutput<T>,
     ) {
         if let Some(csi) = self.curr_strategy_index {
             if self.key_states[note as usize].note_off(
@@ -225,10 +244,10 @@ impl<T: StackType> ProcessFromStrategy<T> {
                     &mut self.queue,
                 );
                 self.queue.drain(..).for_each(|msg| {
-                    let _ = forward.send(FromProcess::FromStrategy(msg));
+                    forward.send(FromProcess::FromStrategy(msg));
                 });
             }
-            let _ = forward.send(FromProcess::NoteOff {
+            forward.send(FromProcess::NoteOff {
                 channel,
                 note,
                 velocity,
@@ -242,7 +261,7 @@ impl<T: StackType> ProcessFromStrategy<T> {
         time: Instant,
         channel: Channel,
         value: u8,
-        forward: &mpsc::Sender<FromProcess<T>>,
+        forward: &mut ProcessOutput<T>,
     ) {
         if let Some(csi) = self.curr_strategy_index {
             if value > 0 {
@@ -260,12 +279,12 @@ impl<T: StackType> ProcessFromStrategy<T> {
                             &mut self.queue,
                         );
                         self.queue.drain(..).for_each(|msg| {
-                            let _ = forward.send(FromProcess::FromStrategy(msg));
+                            forward.send(FromProcess::FromStrategy(msg));
                         });
                     }
                 }
             }
-            let _ = forward.send(FromProcess::PedalHold {
+            forward.send(FromProcess::PedalHold {
                 channel,
                 value,
                 time,
@@ -273,7 +292,7 @@ impl<T: StackType> ProcessFromStrategy<T> {
         }
     }
 
-    fn start(&mut self, time: Instant, forward: &mpsc::Sender<FromProcess<T>>) {
+    fn start(&mut self, time: Instant, forward: &mut ProcessOutput<T>) {
         if let Some(csi) = self.curr_strategy_index {
             self.strategies[csi].0.start(
                 &self.key_states,
@@ -282,10 +301,10 @@ impl<T: StackType> ProcessFromStrategy<T> {
                 &mut self.queue,
             );
             self.queue.drain(..).for_each(|msg| {
-                let _ = forward.send(FromProcess::FromStrategy(msg));
+                forward.send(FromProcess::FromStrategy(msg));
             });
         }
-        let _ = forward.send(FromProcess::CurrentStrategyIndex(self.curr_strategy_index));
+        forward.send(FromProcess::CurrentStrategyIndex(self.curr_strategy_index));
     }
 }
 
@@ -293,14 +312,16 @@ impl<T: StackType + fmt::Debug + 'static> HandleMsg<ToProcess<T>, FromProcess<T>
     for ProcessFromStrategy<T>
 {
     fn handle_msg(&mut self, msg: ToProcess<T>, forward: &mpsc::Sender<FromProcess<T>>) {
+        let mut output = ProcessOutput::Channel(forward);
+
         match msg {
             ToProcess::Stop => {}
-            ToProcess::Reset { time } => self.start(time, forward),
-            ToProcess::Start { time } => self.start(time, forward),
+            ToProcess::Reset { time } => self.start(time, &mut output),
+            ToProcess::Start { time } => self.start(time, &mut output),
             ToProcess::IncomingMidi { time, bytes } => match MidiMsg::from_midi(&bytes) {
-                Ok((msg, _)) => self.handle_midi(time, msg, forward), // TODO: multi-part messages?
+                Ok((msg, _)) => self.handle_midi(time, msg, &mut output),
                 Err(e) => {
-                    let _ = forward.send(FromProcess::MidiParseErr(e.to_string()));
+                    output.send(FromProcess::MidiParseErr(e.to_string()));
                 }
             },
             ToProcess::NoteOn {
@@ -308,18 +329,20 @@ impl<T: StackType + fmt::Debug + 'static> HandleMsg<ToProcess<T>, FromProcess<T>
                 note,
                 velocity,
                 time,
-            } => self.handle_note_on(time, note, channel, velocity, forward),
+            } => self.handle_note_on(time, note, channel, velocity, &mut output),
+
             ToProcess::NoteOff {
                 channel,
                 note,
                 velocity,
                 time,
-            } => self.handle_note_off(time, note, channel, velocity, forward),
+            } => self.handle_note_off(time, note, channel, velocity, &mut output),
+
             ToProcess::PedalHold {
                 channel,
                 value,
                 time,
-            } => self.handle_pedal_hold(time, channel, value, forward),
+            } => self.handle_pedal_hold(time, channel, value, &mut output),
             ToProcess::ToStrategy(msg) => {
                 if let Some(csi) = self.curr_strategy_index {
                     let _success = self.strategies[csi].0.handle_msg(
@@ -328,8 +351,9 @@ impl<T: StackType + fmt::Debug + 'static> HandleMsg<ToProcess<T>, FromProcess<T>
                         msg,
                         &mut self.queue,
                     );
+
                     self.queue.drain(..).for_each(|msg| {
-                        let _ = forward.send(FromProcess::FromStrategy(msg));
+                        output.send(FromProcess::FromStrategy(msg));
                     });
                 }
             }
@@ -339,7 +363,8 @@ impl<T: StackType + fmt::Debug + 'static> HandleMsg<ToProcess<T>, FromProcess<T>
                     &mut self.strategies,
                     &mut self.curr_strategy_index,
                 );
-                self.start(time, forward);
+
+                self.start(time, &mut output);
             }
             ToProcess::BindAction { action, bindable } => {
                 if let Some(csi) = self.curr_strategy_index {
@@ -352,15 +377,16 @@ impl<T: StackType + fmt::Debug + 'static> HandleMsg<ToProcess<T>, FromProcess<T>
                 }
             }
             ToProcess::GetCurrentConfig => {
-                let _ = forward.send(FromProcess::CurrentConfig(self.extract_config()));
+                output.send(FromProcess::CurrentConfig(self.extract_config()));
             }
             ToProcess::RestartWithConfig { time, config } => {
                 *self = <Self as FromConfigAndState<_, _>>::initialise(config, ());
-                self.start(time, forward);
+                self.start(time, &mut output);
             }
+
             ToProcess::RestartWithCurrentConfig { time } => {
                 *self = <Self as FromConfigAndState<_, _>>::initialise(self.extract_config(), ());
-                self.start(time, forward);
+                self.start(time, &mut output);
             }
         }
     }
@@ -387,5 +413,127 @@ impl<T: StackType, S> FromConfigAndState<ProcessConfig<T>, S> for ProcessFromStr
                 .map(|(s, b)| (s.realize(), b))
                 .collect(),
         )
+    }
+}
+
+impl<T: StackType> ProcessFromStrategy<T> {
+    pub fn note_on(
+        &mut self,
+        channel: Channel,
+        note: u8,
+        velocity: u8,
+        time: Instant,
+    ) -> Vec<FromProcess<T>> {
+        let mut output = Vec::new();
+        let mut sink = ProcessOutput::Vec(&mut output);
+
+        self.handle_note_on(time, note, channel, velocity, &mut sink);
+
+        output
+    }
+
+    pub fn note_off(
+        &mut self,
+        channel: Channel,
+        note: u8,
+        velocity: u8,
+        time: Instant,
+    ) -> Vec<FromProcess<T>> {
+        let mut output = Vec::new();
+        let mut sink = ProcessOutput::Vec(&mut output);
+
+        self.handle_note_off(time, note, channel, velocity, &mut sink);
+
+        output
+    }
+
+    pub fn pedal_hold(
+        &mut self,
+        channel: Channel,
+        value: u8,
+        time: Instant,
+    ) -> Vec<FromProcess<T>> {
+        let mut output = Vec::new();
+        let mut sink = ProcessOutput::Vec(&mut output);
+
+        self.handle_pedal_hold(time, channel, value, &mut sink);
+
+        output
+    }
+
+    pub fn program_change(
+        &mut self,
+        channel: Channel,
+        program: u8,
+        time: Instant,
+    ) -> Vec<FromProcess<T>> {
+        vec![FromProcess::ProgramChange {
+            channel,
+            program,
+            time,
+        }]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use midi_msg::Channel;
+    use std::time::Instant;
+
+    use crate::{config::ProcessConfig, interval::stacktype::fivelimit::TheFiveLimitStackType};
+
+    fn empty_process() -> ProcessFromStrategy<TheFiveLimitStackType> {
+        ProcessFromStrategy::initialise(
+            ProcessConfig {
+                strategies: Vec::new(),
+            },
+            (),
+        )
+    }
+
+    #[test]
+    fn note_on_without_strategy_produces_no_event() {
+        let mut process = empty_process();
+
+        let events = process.note_on(Channel::Ch1, 60, 100, Instant::now());
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn note_off_without_strategy_produces_no_event() {
+        let mut process = empty_process();
+
+        let events = process.note_off(Channel::Ch1, 60, 0, Instant::now());
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn pedal_without_strategy_produces_no_event() {
+        let mut process = empty_process();
+
+        let events = process.pedal_hold(Channel::Ch1, 127, Instant::now());
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn program_change_is_forwarded_without_strategy() {
+        let mut process = empty_process();
+
+        let events = process.program_change(Channel::Ch1, 42, Instant::now());
+
+        assert_eq!(events.len(), 1);
+
+        assert!(matches!(
+            events[0],
+            FromProcess::ProgramChange {
+                channel: Channel::Ch1,
+                program: 42,
+                ..
+            }
+        ));
     }
 }

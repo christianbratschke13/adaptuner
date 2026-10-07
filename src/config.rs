@@ -199,6 +199,15 @@ impl<T: IntervalBasis> Config<T> {
             },
         }
     }
+
+    pub fn first_static_tuning_config(&self) -> Option<StaticTuningConfig<T>> {
+        self.strategies
+            .first()
+            .and_then(|strategy| match &strategy.config {
+                ExtendedStrategyConfig::StaticTuning(config) => Some(config.split().0),
+                _ => None,
+            })
+    }
 }
 
 #[derive(Clone, Copy)]
